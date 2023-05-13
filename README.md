@@ -12,7 +12,9 @@ Csv Format:
 * First Row column names
 * Data needs to be delimited by "," 
 
+Todo:
+* Fix fehlergeraden when M<0
 
 Improvements:
-* Take into account errors and decimal places
+* Take into account decimal places
 * Use gradient descent to get more accurate vline position 
