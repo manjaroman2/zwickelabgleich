@@ -1,32 +1,16 @@
 import numpy as np 
+import matplotlib.pyplot as plt 
 import argparse
 from pathlib import Path
-import os
+from common import readcsv, dir_path, get_parser, ON_COLAB
+from fehlergeraden import calc as fehlergeraden_calc
 
-PNG_DPI = 600
 
-def dir_path(string):
-    if os.path.isdir(string):
-        return string
-    else:
-        raise NotADirectoryError(string)
+PNG_DPI = 900
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--out', type=dir_path, default=Path.cwd())
-parser.add_argument('files', help="path to csv files", type=argparse.FileType('r'), nargs='+')
-parser.add_argument('-pl', '--plot', action='store_true', help="plot with matplotlib")
-parser.add_argument('-png', '--png', action='store_true', help="save as png")
-args = parser.parse_args()
-
-# print('  '.join([f"{k}={w}"for k, w in args.__dict__.items()]))
-
-def calc(file: Path, data: np.array):
-    xcol, ycol = data.dtype.names
-    xquantity, xunit = xcol.replace("_", " ").split()
-    yquantity, yunit = ycol.replace("_", " ").split()
+def calc(X, Y, DX, DY, xquantity, xunit, yquantity, yunit, plot=True, png=False, out=Path.cwd(), debug=False, download=False, to_download=list(), fehlergeraden=False, *args):    
     # print(f'{xquantity} [{xunit}]  | ', f'{yquantity} [{yunit}]')
-    X = data[xcol]
-    Y = data[ycol]
+    # print(DX, DY)
     _max = len(Y) - np.argmax(Y[::-1]) - 1
     xmax = X[_max]
     ymax = Y[_max]
@@ -39,6 +23,13 @@ def calc(file: Path, data: np.array):
         _d = 1
     lower_m = (ymin - Y[0])/_d
     lower_t = ymin - lower_m * xmin 
+    
+    # print(X[_max:], Y[_max:], DX[_max:], DY[_max:])
+    if fehlergeraden:
+        _maxx = 5 
+        upper_h, upper_l = fehlergeraden_calc(X[_maxx:], Y[_maxx:], DX[_maxx:], DY[_maxx:])
+        print(upper_h, upper_l)
+        lower_h, lower_l = fehlergeraden_calc(X[:_min], Y[:_min], DX[:_min], DY[:_min])
     
     i = _min
     last_diff = 0
@@ -62,33 +53,71 @@ def calc(file: Path, data: np.array):
     print(f"{file.stem}:")
     print(f"lower={round(R_lower, 1)}")
     print(f"upper={round(R_upper, 1)}")
-    if args.png or args.plot:
-        import matplotlib.pyplot as plt 
+    if png or plot:
         plt.close()
+        plt.cla()
+        plt.clf()
         plt.xlabel(f"{xquantity} [{xunit}]")
         plt.ylabel(f"{yquantity} [{yunit}]")
         plt.minorticks_on()
         plt.grid(True, which='both', axis='both')
-        plt.vlines(X[i], R_lower, R_upper, colors='k', linestyles='solid')
+        plt.vlines(X[i], R_lower, R_upper, colors='c', linestyles='solid')
         plt.plot([0, X[-1]], [upper_t, Y[-1]], c='r', linestyle='dashed')
         plt.plot([0, X[-1]], [Y[0], lower_m*X[-1]+lower_t], c='g', linestyle='dashed')
+        if fehlergeraden:
+            if upper_h:
+                plt.plot([upper_h[0][0], upper_h[1][0]], [upper_h[1][0], upper_h[1][1]], c='r', linestyle='dashed')
         # plt.plot(X, Y, marker='x')
         plt.scatter(X, Y, marker='x')
-        plt.hlines([R_lower, R_upper], 0, X[i], colors='orange', linestyles='solid')
+        
+        if len(DX) > 0 and len(DY) > 0:
+            plt.errorbar(X, Y, xerr=DX, yerr=DY, fmt='_', ecolor="black", solid_capstyle='projecting', capsize=5)
+        elif len(DX) > 0 and not  len(DY) > 0:
+            plt.errorbar(X, Y, xerr=DX, yerr=np.zeros_like(DX), fmt='_', ecolor="black", solid_capstyle='projecting', capsize=5)
+            
         plt.text(0, R_upper * 0.995, f'{round(R_upper, 2)}{yunit}', ha='left', va='center')
         plt.text(0, R_lower * 1.005, f'{round(R_lower, 2)}{yunit}', ha='left', va='center')
-        if args.png:
+        plt.hlines([R_lower, R_upper], 0, X[i], colors='orange', linestyles='solid')
+        if png:
             # {xquantity}[{xunit}]_{yquantity}[{yunit}]
-            fn = args.out / Path(f"{file.stem}_zwickelabgleich.png")
+            fn = out / Path(f"{file.stem}_zwickelabgleich.png")
             plt.savefig(fn, dpi=PNG_DPI)
             print(f"-> {fn.resolve()}")
-        if args.plot:
+            if ON_COLAB and download:
+                to_download.append(fn)
+        if plot:
             plt.show()
-        plt.close()
     return R_lower, R_upper
 
+def save_to_xlsx():
+    import openpyxl
+    wb = openpyxl.load_workbook('input.xlsx')
+    ws = wb.active
+    img = openpyxl.drawing.image.Image('myplot.png')
+    img.anchor(ws.cell('A1'))
 
-for f in args.files:
-    file = Path(f.name).resolve()
-    # print(file)
-    R_lower, R_upper = calc(file, np.genfromtxt(file, dtype=None, delimiter=',', names=True))
+    ws.add_image(img)
+    wb.save('output.xlsx')
+
+
+
+if __name__ == "__main__":    
+    parser = get_parser()
+    parser.add_argument('--out', type=dir_path, default=Path.cwd())
+    parser.add_argument('files', help="path to csv files", type=argparse.FileType('r'), nargs='+')
+    parser.add_argument('-pl', '--plot', action='store_true', help="plot with matplotlib")
+    parser.add_argument('-png', '--png', action='store_true', help="save as png")
+    parser.add_argument('-f', '--fehlergeraden', action='store_true', help="calculate fehlergeraden")
+    args = parser.parse_args()
+
+    if args.download and not ON_COLAB:
+        print(f"Warning: --download flag was supplied but 'google' module was not found, we are either not on colab or something went wrong")
+    # print('  '.join([f"{k}={w}"for k, w in args.__dict__.items()]))
+
+    to_download = []
+    for f in args.files:
+        file = Path(f.name).resolve()
+        calc(*readcsv(file), png=args.png, plot=args.plot, debug=args.debug, download=args.download, out=args.out, to_download=to_download, fehlergeraden=args.fehlergeraden)
+
+    for f in to_download:
+        colab_files.download(f)
