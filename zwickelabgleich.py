@@ -3,7 +3,14 @@ import os
 from pathlib import Path
 import numpy as np 
 import sys 
+
+import locale
+# locale.setlocale(locale.LC_ALL, "de_DE.UTF-8")
+locale.setlocale(locale.LC_NUMERIC, "de_DE.UTF-8")
 this_module = sys.modules[__name__]
+
+ndecimals = 2
+error = 0.03
 
 def dir_path(string):
     if os.path.isdir(string):
@@ -17,7 +24,7 @@ parser.add_argument('--out', type=dir_path, default=Path.cwd())
 parser.add_argument('files', help="path to csv files", type=argparse.FileType('r'), nargs='+')
 parser.add_argument('-pl', '--plot', action='store_true', help="plot with matplotlib")
 parser.add_argument('-png', '--png', action='store_true', help="save as png")
-parser.add_argument('-f', '--fehlergeraden', action='store_true', help="calculate fehlergeraden")
+parser.add_argument('-e', '--err', action='store_true', help="calculate the error")
 args = parser.parse_args()
 
 
@@ -51,7 +58,7 @@ def readcsv(file: Path):
 
 
 
-def calc(t, T1, T2, TM, png=False, plot=False, debug=False, out=Path.cwd(), fehlergeraden=False):
+def calc(t, T1, T2, TM, png=False, plot=False, debug=False, out=Path.cwd(), err=False):
     t = np.array(t)
     T1 = np.array(T1)
     T2 = np.array(T2)
@@ -113,6 +120,12 @@ def calc(t, T1, T2, TM, png=False, plot=False, debug=False, out=Path.cwd(), fehl
     T_M = GM(xM)
     T_2 = G2(xM)
     
+    xM_1 = xM*(1-error)
+    xM_2 = xM*(1+error)
+    delta_T_1 = abs(G1(xM_2)-G1(xM_1))/2
+    delta_T_M = abs(GM(xM_2)-GM(xM_1))/2
+    delta_T_2 = abs(G2(xM_2)-G2(xM_1))/2
+    
     
     import matplotlib.pyplot as plt
     plt.scatter(t, T1, label="T1", marker='x')
@@ -121,18 +134,21 @@ def calc(t, T1, T2, TM, png=False, plot=False, debug=False, out=Path.cwd(), fehl
     plt.plot([t[0], t[-1]], [G1(t[0]), G1(t[-1])])
     plt.plot([t[0], t[-1]], [G2(t[0]), G2(t[-1])], c='r')
     plt.plot([t[0], t[-1]], [GM(t[0]), GM(t[-1])])
-    plt.vlines(x=[xM], ymin=[T_1], ymax=[T_2], colors=['purple'])
+    plt.vlines(x=[xM, xM_1, xM_2], ymin=[T_1, T_1-delta_T_1, T_1+delta_T_1], ymax=[T_2, T_2+delta_T_2, T_2-delta_T_2], colors=['purple', 'plum', 'plum'], linestyles=['solid', 'dashed', 'dashed'])
     plt.hlines(y=[T_1, T_M, T_2], xmin=[0], xmax=[xM], linestyles=[":"], colors=['purple'])
     props = dict(boxstyle='round', facecolor='wheat', alpha=1)
-    plt.text(0, T_1, f'T₁={round(T_1, 2)} °C', ha='left', va='center', bbox=props)
-    plt.text(0, T_M, f'Tₘ={round(T_M, 2)} °C', ha='left', va='center', bbox=props)
-    plt.text(0, T_2, f'T₂={round(T_2, 2)} °C', ha='left', va='center', bbox=props)
+    plt.text(0, T_1, f'T₁={round(T_1, ndecimals):.2f} °C'.replace(".", ","), ha='left', va='center', bbox=props)
+    plt.text(0, T_M, f'Tₘ={round(T_M, ndecimals):.2f} °C'.replace(".", ","), ha='left', va='center', bbox=props)
+    plt.text(0, T_2, f'T₂={round(T_2, ndecimals):.2f} °C'.replace(".", ","), ha='left', va='center', bbox=props)
+    props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+    plt.text(xM_2, T_2+delta_T_2, f'ΔT₂=±{round(delta_T_2, ndecimals):.2f} °C'.replace(".", ","), ha='left', va='bottom', bbox=props)
+    plt.text(xM_2, T_M, f'ΔTₘ=±{round(delta_T_M, ndecimals):.2f} °C'.replace(".", ","), ha='left', va='bottom', bbox=props)
+    plt.text(xM_2, T_1-delta_T_1, f'ΔT₁=±{round(delta_T_1, ndecimals):.2f} °C'.replace(".", ","), ha='left', va='bottom', bbox=props)
     plt.grid(color='gray', linestyle='-', which='major', linewidth=0.5)
     plt.grid(color='lightgray', linestyle='-', which='minor', linewidth=0.5)
     plt.minorticks_on()
     plt.xlabel('t / [s]')
     plt.ylabel('T / [°C]')
-    
     if plot:
         plt.show()
         
@@ -152,4 +168,4 @@ for f in args.files:
     png = False
     if args.png:
         png = file
-    calc(*readcsv(file), png=png, plot=args.plot, debug=args.debug, out=args.out, fehlergeraden=args.fehlergeraden)
+    calc(*readcsv(file), png=png, plot=args.plot, debug=args.debug, out=args.out, err=args.err)
