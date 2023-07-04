@@ -13,8 +13,7 @@ Csv Format:
 * Data needs to be delimited by "," 
 
 Todo:
-* Fix fehlergeraden when M<0
+* Care for units in csv 
 
 Improvements:
-* Take into account decimal places
-* Use gradient descent to get more accurate vline position 
+* consistent decimal places formatting 
