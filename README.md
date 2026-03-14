@@ -1,3 +1,5 @@
+![](./example_data.png)
+
 Requires: 
 
 * [Python](https://www.python.org/) >=3.8
